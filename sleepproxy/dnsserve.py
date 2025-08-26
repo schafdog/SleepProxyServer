@@ -104,35 +104,41 @@ def parse_edns_options(message):
     # Look for OPT record in additional section
     for rr in message.ar:
         if rr.rtype == QTYPE.OPT:
-            # OPT record found - parse the options
-            opt_data = rr.rdata.data if hasattr(rr.rdata, 'data') else bytes(rr.rdata)
+            logging.debug("Found OPT record with rdata: %s (type: %s)" % (rr.rdata, type(rr.rdata)))
             
-            # Parse EDNS options from OPT rdata
-            offset = 0
-            while offset < len(opt_data):
-                if offset + 4 > len(opt_data):
-                    break
-                    
-                # Parse option header: code (2 bytes) + length (2 bytes)
-                opt_code, opt_len = struct.unpack('!HH', opt_data[offset:offset+4])
-                offset += 4
-                
-                if offset + opt_len > len(opt_data):
-                    break
-                    
-                opt_payload = opt_data[offset:offset+opt_len]
-                offset += opt_len
-                
-                # Parse known option types
+            # dnslib EDNSOption has code and data attributes
+            if hasattr(rr.rdata, 'code') and hasattr(rr.rdata, 'data'):
+                # Single EDNS option
                 try:
-                    if opt_code == UL_OPTION:
-                        options['lease'] = UpdateLeaseOption.from_wire(opt_payload)
-                    elif opt_code == OWNER_OPTION:
-                        options['owner'] = OwnerOption.from_wire(opt_payload)
+                    if rr.rdata.code == UL_OPTION:
+                        options['lease'] = UpdateLeaseOption.from_wire(rr.rdata.data)
+                        logging.debug("Parsed UpdateLeaseOption: %s" % options['lease'])
+                    elif rr.rdata.code == OWNER_OPTION:
+                        options['owner'] = OwnerOption.from_wire(rr.rdata.data)
+                        logging.debug("Parsed OwnerOption: %s" % options['owner'])
                     else:
-                        logging.debug("Unknown EDNS option code: %d" % opt_code)
+                        logging.debug("Unknown EDNS option code: %d" % rr.rdata.code)
                 except Exception as e:
-                    logging.debug("Failed to parse EDNS option %d: %s" % (opt_code, e))
+                    logging.debug("Failed to parse EDNS option %d: %s" % (rr.rdata.code, e))
+            
+            # Check if rdata has multiple options or other attributes
+            elif hasattr(rr.rdata, '__iter__'):
+                # Multiple EDNS options
+                for option in rr.rdata:
+                    if hasattr(option, 'code') and hasattr(option, 'data'):
+                        try:
+                            if option.code == UL_OPTION:
+                                options['lease'] = UpdateLeaseOption.from_wire(option.data)
+                                logging.debug("Parsed UpdateLeaseOption: %s" % options['lease'])
+                            elif option.code == OWNER_OPTION:
+                                options['owner'] = OwnerOption.from_wire(option.data)
+                                logging.debug("Parsed OwnerOption: %s" % options['owner'])
+                            else:
+                                logging.debug("Unknown EDNS option code: %d" % option.code)
+                        except Exception as e:
+                            logging.debug("Failed to parse EDNS option %d: %s" % (option.code, e))
+            else:
+                logging.debug("Unrecognized OPT rdata format: %s" % dir(rr.rdata))
                     
     return options
 
