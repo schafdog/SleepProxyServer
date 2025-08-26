@@ -15,7 +15,8 @@ dns.rdataclass.UNIQUE = 0x8000 #32768
 # http://www.opensource.apple.com/source/mDNSResponder/mDNSResponder-522.1.11/mDNSCore/mDNSEmbeddedAPI.h 
 # kDNSClass_UniqueRRSet
 # have to filter it out from some OSX SPS clients' rdatas
-dns.rdataclass._by_value.update({0x8001: 'IN'}) #for nicer nsupdate text dumps 
+# Use modern dnspython API instead of deprecated _by_value
+dns.rdataclass.RdataClass.make(0x8001, 'IN') #for nicer nsupdate text dumps 
 
 _HOSTS = {}
 
