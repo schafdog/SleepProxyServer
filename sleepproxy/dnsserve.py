@@ -101,17 +101,40 @@ class SleepProxyServer(asyncio.DatagramProtocol):
         # Try to guess the interface this came in on
         #   todo - precompute this table on new()?
         for iface in netifaces.interfaces():
-            ifaddresses = netifaces.ifaddresses(iface)
-            for af, addresses in ifaddresses.items():
-                if af not in (netifaces.AF_INET, netifaces.AF_INET6): continue
-                for address in addresses:
-                    mask = address['netmask']
-                    if af == netifaces.AF_INET6: mask = (mask.count('f') * 4) # convert linux masks to prefix length...gooney
-                    if address['addr'].find('%') > -1: continue #more linux ipv6 stupidity
-                    iface_net = ipaddress.ip_interface('%s/%s' % (address['addr'], mask)).network
-                    if ipaddress.ip_address(addr[0]) in iface_net:
-                        info['mymac'] = ifaddresses[netifaces.AF_LINK][0]['addr']
-                        info['myif'] = iface
+            try:
+                ifaddresses = netifaces.ifaddresses(iface)
+                for af, addresses in ifaddresses.items():
+                    if af not in (netifaces.AF_INET, netifaces.AF_INET6): continue
+                    for address in addresses:
+                        try:
+                            mask = address['netmask']
+                            if af == netifaces.AF_INET6: mask = (mask.count('f') * 4) # convert linux masks to prefix length...gooney
+                            if address['addr'].find('%') > -1: continue #more linux ipv6 stupidity
+                            iface_net = ipaddress.ip_interface('%s/%s' % (address['addr'], mask)).network
+                            if ipaddress.ip_address(addr[0]) in iface_net:
+                                # Try to get MAC address - different systems use different constants
+                                mac_addr = None
+                                for link_af in [netifaces.AF_LINK, 17, 18]:  # Try common AF_LINK values
+                                    try:
+                                        if link_af in ifaddresses and ifaddresses[link_af]:
+                                            mac_addr = ifaddresses[link_af][0]['addr']
+                                            break
+                                    except (KeyError, IndexError):
+                                        continue
+                                
+                                if mac_addr:
+                                    info['mymac'] = mac_addr
+                                    info['myif'] = iface
+                                else:
+                                    logging.debug("Could not find MAC address for interface %s" % iface)
+                                    info['myif'] = iface
+                                break
+                        except Exception as e:
+                            logging.debug("Error processing address %s on interface %s: %s" % (address.get('addr', 'unknown'), iface, e))
+                            continue
+            except Exception as e:
+                logging.debug("Error processing interface %s: %s" % (iface, e))
+                continue
     
         for rr in message.auth:
             # dnslib doesn't have the cache-flush bit handling like dnspython
