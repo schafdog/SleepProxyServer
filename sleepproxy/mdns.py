@@ -92,10 +92,12 @@ def _update_to_group(group, records):
             # Create digestable rdata string like dnspython did
             if hasattr(record.rdata, 'data') and isinstance(record.rdata.data, list):
                 # TXT record with multiple strings
-                rdata_str = ' '.join('"%s"' % s.decode('utf-8') if isinstance(s, bytes) else str(s) for s in record.rdata.data)
+                rdata_str = ' '.join('"%s"' % s.decode('utf-8') if isinstance(s, bytes)
+                                     else str(s) for s in record.rdata.data)
             else:
                 # Other record types - use string representation
                 rdata_str = str(record.rdata)
+            logging.debug(f"RDATA: {rdata_str}")
             
             group.AddRecord(
               IF_UNSPEC,  # iface
@@ -107,7 +109,7 @@ def _update_to_group(group, records):
               dbus.UInt32(record.ttl), #ttl
               string_array_to_txt_array([rdata_str])[0] #rdata
             )
-            logging.info('added mDNS record to Avahi: %s' % record)
+            logging.info(f"added mDNS record to Avahi: {record}, {rdata_str}")
         except UnicodeDecodeError:
             logging.warning('malformed unicode in rdata, skipping: %s' % record)
         except dbus.exceptions.DBusException as e:
@@ -120,6 +122,7 @@ def _update_to_group(group, records):
                 # mDNS.c sends UTF8, dnslib handles this better than dnspython
                 # Avahi only takes [a-zA-Z0-9.-] in domain names
             else:
+                logging.warning('Error with mDNS record: %s' % record)
                 raise
 
 
