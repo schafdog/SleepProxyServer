@@ -23,46 +23,26 @@ info = {
    "records": []
 }
 
-import dns.message
+from dnslib import DNSRecord, RR, TXT, PTR, SRV, A, AAAA, QTYPE
 
-nsupdate = '''id 48872
-opcode UPDATE
-rcode NOERROR
-flags
-edns 0
-eflags
-payload 1440
-;ZONE
-;PREREQ
-;UPDATE
-fakemac._device-info._tcp.local. 4500 IN TXT "model=Macmini3,1" "osxvers=13"
-fakemac._rfb._tcp.local. 4500 IN TXT ""
-_services._dns-sd._udp.local. 4500 IN PTR _rfb._tcp.local.
-_rfb._tcp.local. 4500 IN PTR fakemac._rfb._tcp.local.
-fakemac._rfb._tcp.local. 120 IN SRV 0 0 5900 fakemac.local.
-fakemac._ssh._tcp.local. 4500 IN TXT ""
-_services._dns-sd._udp.local. 4500 IN PTR _ssh._tcp.local.
-_ssh._tcp.local. 4500 IN PTR fakemac._ssh._tcp.local.
-fakemac._sftp-ssh._tcp.local. 4500 IN TXT ""
-_services._dns-sd._udp.local. 4500 IN PTR _sftp-ssh._tcp.local.
-_sftp-ssh._tcp.local. 4500 IN PTR fakemac._sftp-ssh._tcp.local.
-fakemac._ssh._tcp.local. 120 IN SRV 0 0 22 fakemac.local.
-fakemac._sftp-ssh._tcp.local. 120 IN SRV 0 0 22 fakemac.local.
-fakemac._eppc._tcp.local. 4500 IN TXT ""
-_services._dns-sd._udp.local. 4500 IN PTR _eppc._tcp.local.
-_eppc._tcp.local. 4500 IN PTR fakemac._eppc._tcp.local.
-fakemac._eppc._tcp.local. 120 IN SRV 0 0 3031 fakemac.local.
-_kerberos.fakemac.local. 4500 IN TXT "LKDC:SHA1.066C0CD4E8093DBC5E5FFE9B87D23C7C82B53BC5"
-9.3.D.9.E.D.E.F.F.F.0.2.A.9.6.D.0.0.0.0.0.0.0.0.0.0.0.0.0.8.E.F.ip6.arpa. 120 IN PTR fakemac.local.
-22.2.2.10.in-addr.arpa. 120 IN PTR fakemac.local.
-fakemac.local. 120 IN AAAA fe80::d69a:20ff:fede:9d39
-fakemac.local. 120 IN A 10.2.2.22
-9.3.D.9.E.D.E.F.F.F.0.2.A.9.6.D.0.0.0.0.8.0.2.5.D.E.F.5.A.5.D.F.ip6.arpa. 120 IN PTR fakemac.local.
-fakemac.local. 120 IN AAAA fd5a:5fed:5208:0:d69a:20ff:fede:9d39
-;ADDITIONAL'''
-message = dns.message.from_text(nsupdate)
-for rrset in message.authority:
-    info['records'].append(rrset)
+# Create fake DNS records manually with dnslib (simpler than parsing text)
+fake_records = [
+    RR("fakemac._device-info._tcp.local", QTYPE.TXT, ttl=4500, rdata=TXT(["model=Macmini3,1", "osxvers=13"])),
+    RR("fakemac._rfb._tcp.local", QTYPE.TXT, ttl=4500, rdata=TXT("")),
+    RR("_services._dns-sd._udp.local", QTYPE.PTR, ttl=4500, rdata=PTR("_rfb._tcp.local")),
+    RR("_rfb._tcp.local", QTYPE.PTR, ttl=4500, rdata=PTR("fakemac._rfb._tcp.local")),
+    RR("fakemac._rfb._tcp.local", QTYPE.SRV, ttl=120, rdata=SRV(0, 0, 5900, "fakemac.local")),
+    RR("fakemac._ssh._tcp.local", QTYPE.TXT, ttl=4500, rdata=TXT("")),
+    RR("_services._dns-sd._udp.local", QTYPE.PTR, ttl=4500, rdata=PTR("_ssh._tcp.local")),
+    RR("_ssh._tcp.local", QTYPE.PTR, ttl=4500, rdata=PTR("fakemac._ssh._tcp.local")),
+    RR("fakemac._ssh._tcp.local", QTYPE.SRV, ttl=120, rdata=SRV(0, 0, 22, "fakemac.local")),
+    RR("22.2.2.10.in-addr.arpa", QTYPE.PTR, ttl=120, rdata=PTR("fakemac.local")),
+    RR("fakemac.local", QTYPE.A, ttl=120, rdata=A("10.2.2.22")),
+    RR("fakemac.local", QTYPE.AAAA, ttl=120, rdata=AAAA("fe80::d69a:20ff:fede:9d39")),
+]
+
+# Convert dnslib records to the format expected by sleepproxy
+info['records'] = fake_records
 
 import sleepproxy.manager
 sleepproxy.manager.manage_host(info)

@@ -13,7 +13,7 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         # "dbus-python",  # Unfortunately not distributed with a setup.py
-        "dnspython",
+        "dnslib",
         "netifaces",
         "scapy",
     ],

@@ -26,7 +26,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install Python dependencies
-pip install dnspython netifaces scapy dbus-python
+pip install dnslib netifaces scapy dbus-python
 
 # Run directly
 sudo ./scripts/sleepproxyd --verbose
@@ -39,7 +39,7 @@ sudo python3 scripts/sleepproxyd --verbose
 
 ```bash
 # Install dependencies system-wide
-pip3 install --user dnspython netifaces scapy dbus-python
+pip3 install --user dnslib netifaces scapy dbus-python
 
 # Run from source directory
 cd SleepProxyServer
