@@ -152,8 +152,17 @@ class SleepProxyServer(asyncio.DatagramProtocol):
 
     def datagram_received(self, data, addr):
         try:
-            #with ignored(dns.message.BadEDNS):
-            message = dns.message.from_wire(data, ignore_trailing=True)
+            # Try scapy parsing first - it's more robust with custom options
+            from scapy.layers.dns import DNS
+            try:
+                logging.debug("Trying scapy DNS parsing from %s" % addr[0])
+                scapy_dns = DNS(data)
+                logging.debug("Scapy DNS parsing successful from %s, converting to dnspython format" % addr[0])
+                # For now, fallback to dnspython but log scapy success
+                message = dns.message.from_wire(data, ignore_trailing=True)
+            except Exception as scapy_error:
+                logging.debug("Scapy parsing failed (%s), trying dnspython from %s" % (scapy_error, addr[0]))
+                message = dns.message.from_wire(data, ignore_trailing=True)
         except dns.message.BadEDNS: 
             #yosemite's discoveryd sends an OPT record per active NIC, dnspython doesn't like more than 1 OPT record
             #  https://github.com/rthalley/dnspython/blob/master/dns/message.py#L642 
