@@ -26,15 +26,115 @@ import asyncio
 # UL = 2  # Update Lease option
 # OWNER = 4  # Owner option
 
-# TODO: Custom EDNS options for dnslib
-# The following UpdateLeaseOption and OwnerOption classes were specific to dnspython
-# They need to be reimplemented for dnslib's EDNS handling system
-#
-# UpdateLeaseOption: EDNS option for Dynamic DNS Update Leases (option code 2)
-# OwnerOption: EDNS option for Sleep Proxy Service MAC address hinting (option code 4)
-#
-# For now, basic DNS UPDATE parsing works without these custom options
-# The Sleep Proxy Server will still function but won't parse the custom EDNS data
+# Custom EDNS options for dnslib
+UL_OPTION = 2      # Update Lease option code
+OWNER_OPTION = 4   # Owner option code
+
+class UpdateLeaseOption:
+    """EDNS option for Dynamic DNS Update Leases
+    http://tools.ietf.org/html/draft-sekar-dns-ul-01"""
+    def __init__(self, lease):
+        self.otype = UL_OPTION
+        self.lease = lease
+
+    @classmethod
+    def from_wire(cls, data):
+        if len(data) != 4:
+            raise ValueError("UpdateLeaseOption must be 4 bytes")
+        (lease,) = struct.unpack("!L", data)
+        return cls(lease)
+
+    def __repr__(self):
+        return "UpdateLeaseOption(lease=%d)" % self.lease
+
+class OwnerOption:
+    """EDNS option for DNS-SD Sleep Proxy Service client MAC address hinting
+    http://tools.ietf.org/html/draft-cheshire-edns0-owner-option-00"""
+    def __init__(self, ver=0, seq=1, pmac=None, wmac=None, passwd=None):
+        self.otype = OWNER_OPTION
+        self.ver = ver
+        self.seq = seq
+        self.pmac = self._mac2text(pmac) if pmac else None
+        self.wmac = self._mac2text(wmac) if wmac else None
+        self.passwd = passwd
+
+    @staticmethod
+    def _mac2text(mac):
+        if not mac: return mac
+        if isinstance(mac, bytes):
+            mac = binascii.hexlify(mac).decode('ascii')
+        elif isinstance(mac, str) and len(mac) == 6:  # Binary string
+            mac = binascii.hexlify(mac.encode('latin1')).decode('ascii')
+        return mac.lower().translate({ord(c): None for c in '.:-'})  # Remove delimiters
+
+    @classmethod
+    def from_wire(cls, data):
+        if len(data) < 8:
+            raise ValueError("OwnerOption must be at least 8 bytes")
+            
+        ver, seq = struct.unpack('!BB', data[0:2])
+        
+        if len(data) >= 8:
+            pmac = data[2:8]
+        if len(data) >= 14:
+            wmac = data[8:14]
+        else:
+            wmac = pmac
+        if len(data) >= 18:
+            passwd = data[14:18]
+        elif len(data) >= 20:
+            passwd = data[14:20]
+        else:
+            passwd = None
+            
+        return cls(ver, seq, pmac, wmac, passwd)
+
+    def __repr__(self):
+        return "OwnerOption(ver=%d, seq=%d, pmac=%s, wmac=%s)" % (
+            self.ver, self.seq, self.pmac, self.wmac)
+
+def parse_edns_options(message):
+    """Parse EDNS options from a dnslib DNSRecord
+    Returns dict with parsed options"""
+    options = {}
+    
+    if not hasattr(message, 'ar') or not message.ar:
+        return options
+        
+    # Look for OPT record in additional section
+    for rr in message.ar:
+        if rr.rtype == QTYPE.OPT:
+            # OPT record found - parse the options
+            opt_data = rr.rdata.data if hasattr(rr.rdata, 'data') else bytes(rr.rdata)
+            
+            # Parse EDNS options from OPT rdata
+            offset = 0
+            while offset < len(opt_data):
+                if offset + 4 > len(opt_data):
+                    break
+                    
+                # Parse option header: code (2 bytes) + length (2 bytes)
+                opt_code, opt_len = struct.unpack('!HH', opt_data[offset:offset+4])
+                offset += 4
+                
+                if offset + opt_len > len(opt_data):
+                    break
+                    
+                opt_payload = opt_data[offset:offset+opt_len]
+                offset += opt_len
+                
+                # Parse known option types
+                try:
+                    if opt_code == UL_OPTION:
+                        options['lease'] = UpdateLeaseOption.from_wire(opt_payload)
+                    elif opt_code == OWNER_OPTION:
+                        options['owner'] = OwnerOption.from_wire(opt_payload)
+                    else:
+                        logging.debug("Unknown EDNS option code: %d" % opt_code)
+                except Exception as e:
+                    logging.debug("Failed to parse EDNS option %d: %s" % (opt_code, e))
+                    
+    return options
 
 from sleepproxy.manager import manage_host
 
@@ -147,17 +247,23 @@ class SleepProxyServer(asyncio.DatagramProtocol):
     
         logging.debug('NSUPDATE START--\n\n%s\n\n--NSUPDATE END' % message)
  
-        # Process EDNS options - dnslib handles EDNS differently
-        # For now, we'll extract basic info and handle custom options later
-        if hasattr(message, 'edns') and message.edns:
-            logging.debug("EDNS options found in message")
-            # TODO: Handle custom EDNS options (UpdateLeaseOption, OwnerOption)
-            # This would require custom EDNS option parsing in dnslib
-    
-        # TEMPORARY WORKAROUND: Extract othermac from hostname or use a default
-        # In the original code, this came from EDNS OwnerOption
-        if 'othermac' not in info:
-            # Try to extract MAC from the hostname in DNS records
+        # Parse EDNS options using our custom parser
+        edns_options = parse_edns_options(message)
+        logging.debug("Parsed EDNS options: %s" % edns_options)
+        
+        # Extract information from EDNS options
+        if 'lease' in edns_options:
+            info['ttl'] = edns_options['lease'].lease
+            logging.debug("Found lease option: %d seconds" % info['ttl'])
+            
+        if 'owner' in edns_options:
+            owner_opt = edns_options['owner']
+            info['othermac'] = owner_opt.pmac  # Primary MAC (WOL target)
+            logging.debug("Found owner option: MAC=%s, ver=%d, seq=%d" % (
+                owner_opt.pmac, owner_opt.ver, owner_opt.seq))
+        else:
+            # Fallback: Extract othermac from hostname or use a default
+            # This maintains compatibility when EDNS options aren't available
             othermac = None
             for rr in info.get('records', []):
                 rr_name = str(rr.rname).lower()
@@ -177,12 +283,22 @@ class SleepProxyServer(asyncio.DatagramProtocol):
                     othermac = "ffffffffffff"  # Default fallback
                     
             info['othermac'] = othermac
-            logging.warning("Using derived othermac: %s (EDNS OwnerOption not parsed)" % othermac)
+            logging.warning("No EDNS OwnerOption found, using fallback othermac: %s" % othermac)
 
         self._answer(addr, message)
 
-        # For now, always call manage_host - EDNS option handling to be implemented
-        manage_host(info)
+        # Call manage_host if we have both required EDNS options (or fallback data)
+        if 'lease' in edns_options and 'owner' in edns_options:
+            # Have both proper EDNS options - this is a full registration
+            logging.info("Processing full SPS registration with EDNS options")
+            manage_host(info)
+        elif 'othermac' in info:
+            # Have fallback MAC address - proceed anyway for testing
+            logging.warning("Processing SPS registration with fallback data")
+            manage_host(info)
+        else:
+            # Just a post-wake notification (incremented seq number without both options)
+            logging.debug("Skipping registration - appears to be post-wake notification")
         
     def _add_addresses(self, info, rr):
         if rr.rtype != QTYPE.PTR: return
