@@ -86,9 +86,16 @@ def _update_to_group(group, records):
         #    continue #ignore IPV6 for now, can't sniff those connections
 
         try:
-            # Convert dnslib RR to Avahi format
+            # Convert dnslib RR to Avahi format  
             rname = str(record.rname)
-            rdata_str = str(record.rdata)
+            
+            # Create digestable rdata string like dnspython did
+            if hasattr(record.rdata, 'data') and isinstance(record.rdata.data, list):
+                # TXT record with multiple strings
+                rdata_str = ' '.join('"%s"' % s.decode('utf-8') if isinstance(s, bytes) else str(s) for s in record.rdata.data)
+            else:
+                # Other record types - use string representation
+                rdata_str = str(record.rdata)
             
             group.AddRecord(
               IF_UNSPEC,  # iface
