@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*pkg_resources.*")
+
 import asyncio
 
 import argparse
