@@ -19,9 +19,13 @@ class MultilineSysLogHandler(logging.handlers.SysLogHandler):
 
 async def glisten(bindaddr):
     # TODO: support systemd socket activation
-    logging.warning("listening for SleepProxyServer requests on UDP:[%s]:3535" % bindaddr)
-    server = dnsserve.SleepProxyServer((bindaddr, 3535))
-    await server.serve_forever()
+    logging.warning("attempting to listen for SleepProxyServer requests on UDP:[%s]:3535" % bindaddr)
+    try:
+        server = dnsserve.SleepProxyServer((bindaddr, 3535))
+        await server.serve_forever()
+    except Exception as e:
+        logging.error("Failed to start server on %s:3535 - %s" % (bindaddr, e))
+        raise
 
 anyaddr = ['0.0.0.0']
 if socket.has_ipv6: anyaddr.append('::')

@@ -126,10 +126,16 @@ class SleepProxyServer(asyncio.DatagramProtocol):
         
     async def serve_forever(self):
         loop = asyncio.get_running_loop()
-        transport, protocol = await loop.create_datagram_endpoint(
-            lambda: self,
-            local_addr=self.address
-        )
+        try:
+            transport, protocol = await loop.create_datagram_endpoint(
+                lambda: self,
+                local_addr=self.address
+            )
+            logging.info("Successfully bound to %s:%d" % self.address)
+        except Exception as e:
+            logging.error("Failed to bind to %s:%d - %s" % (self.address[0], self.address[1], e))
+            raise
+            
         try:
             await asyncio.Future()  # Run forever
         finally:
