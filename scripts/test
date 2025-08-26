@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #^can't run with python-dbg as scapy passes a memory pointer from python to the kernel to configure a sniffer socket, offseting the pointer ahead of the python object header's length (which is different under -dbg)...
 # http://bb.secdev.org/scapy/src/2d79fea15bea69a4be1debcaf850349f0f0fb962/scapy/arch/linux.py?at=default#cl-134
 # i feex
@@ -13,8 +13,7 @@ import logging
 import logging.handlers
 logging.basicConfig(format="%(asctime)s %(levelname)s %(pathname)s:%(lineno)d %(process)d/%(threadName)s: %(message)s", level=logging.DEBUG)
 
-import gevent.monkey
-gevent.monkey.patch_all()
+import asyncio
 
 info = {
    "othermac": "d49a20de9d39",
@@ -68,14 +67,26 @@ for rrset in message.authority:
 import sleepproxy.manager
 sleepproxy.manager.manage_host(info)
 
-import signal
-def quit(*args):
-    sleepproxy.manager.forget_host(info['othermac'])
-    sys.exit()
-if hasattr(signal, 'SIGINFO'):  signal.signal(signal.SIGINFO, sleepproxy.manager.print_hosts) #BSD only, CTRL-T
-signal.signal(signal.SIGQUIT, sleepproxy.manager.print_hosts)
-signal.signal(signal.SIGUSR1, sleepproxy.manager.print_hosts)
-signal.signal(signal.SIGHUP, sleepproxy.manager.print_hosts) #would like to forget all hosts...
-signal.signal(signal.SIGINT, quit)
-logging.info('Now waiting for packets. Hit CTRL-C to quit test')
-signal.pause()
+async def main():
+    import signal
+    
+    def quit(*args):
+        sleepproxy.manager.forget_host(info['othermac'])
+        sys.exit()
+    
+    if hasattr(signal, 'SIGINFO'):  signal.signal(signal.SIGINFO, sleepproxy.manager.print_hosts) #BSD only, CTRL-T
+    signal.signal(signal.SIGQUIT, sleepproxy.manager.print_hosts)
+    signal.signal(signal.SIGUSR1, sleepproxy.manager.print_hosts)
+    signal.signal(signal.SIGHUP, sleepproxy.manager.print_hosts) #would like to forget all hosts...
+    signal.signal(signal.SIGINT, quit)
+    
+    logging.info('Now waiting for packets. Hit CTRL-C to quit test')
+    
+    # Wait forever (like signal.pause() but async)
+    try:
+        await asyncio.Future()  # Run forever
+    except KeyboardInterrupt:
+        quit()
+
+if __name__ == '__main__':
+    asyncio.run(main())
