@@ -52,8 +52,20 @@ async def main():
     signal.signal(signal.SIGHUP, manager.advertise)
     manager.advertise()
     
-    tasks = [asyncio.create_task(glisten(ip)) for ip in args.bind]
-    await asyncio.gather(*tasks)
+    logging.info("Attempting to bind to addresses: %s" % args.bind)
+    tasks = []
+    for ip in args.bind:
+        try:
+            task = asyncio.create_task(glisten(ip))
+            tasks.append(task)
+        except Exception as e:
+            logging.error("Failed to create task for address %s: %s" % (ip, e))
+    
+    if not tasks:
+        logging.error("No addresses successfully bound, exiting")
+        return
+        
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 if __name__ == '__main__':
     asyncio.run(main())
