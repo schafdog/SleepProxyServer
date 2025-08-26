@@ -9,14 +9,10 @@ PROTO_UNSPEC = -1 #dual-stack
 PROTO_INET = 0 #v4
 PROTO_INET6 = 1
 
-dns.rdataclass.UNIQUE = 0x8000 #32768
-#"cache-flush bit" in mdns RFC6762 ch#10.2, and see ch#22
+# Cache-flush bit in mDNS RFC6762 ch#10.2 
 # http://www.opensource.apple.com/source/mDNSResponder/mDNSResponder-522.1.11/mDNSCore/DNSCommon.c
-# http://www.opensource.apple.com/source/mDNSResponder/mDNSResponder-522.1.11/mDNSCore/mDNSEmbeddedAPI.h 
-# kDNSClass_UniqueRRSet
-# have to filter it out from some OSX SPS clients' rdatas
-# Note: The old _by_value API is no longer available in modern dnspython
-# This was only for prettier nsupdate text dumps, functionality works without it 
+# kDNSClass_UniqueRRSet - have to filter it out from some OSX SPS clients' rdatas
+# dnslib handles this as bit 0x8000 in the rclass field 
 
 _HOSTS = {}
 
@@ -69,52 +65,54 @@ def forget(mac):
     group = _HOSTS.pop(mac)
     group.Free()
 
-def _update_to_group(group, rrsets):
-    """Convert a DNS UPDATE to additions to an Avahi mDNS group"""
-    #logging.debug('parsing DNS UPDATE:\n\n\%s' % rrsets)
-    for rrset in rrsets:
-       for record in rrset:
-            record.rdclass %= dns.rdataclass.UNIQUE #remove cache-flush bit
+def _update_to_group(group, records):
+    """Convert dnslib RR records to additions to an Avahi mDNS group"""
+    from dnslib import QTYPE, CLASS
+    
+    for record in records:
+        # Remove cache-flush bit from dnslib RR
+        record.rclass &= ~0x8000
+        
+        # Check if it's a valid record type
+        if record.rtype not in [QTYPE.PTR, QTYPE.A, QTYPE.AAAA, QTYPE.TXT, QTYPE.SRV]:
+            logging.warning('Invalid DNS RR type (%s), not adding mDNS record to Avahi' % record.rtype)
+            continue
 
-            if record.rdtype not in [dns.rdatatype.PTR, dns.rdatatype.A, dns.rdatatype.AAAA, dns.rdatatype.TXT, dns.rdatatype.SRV]:
-                logging.warning('Invalid DNS RR type (%s), not adding mDNS record to Avahi' % record.rdtype)
-                continue
+        if record.rclass != CLASS.IN:
+            logging.warning('Invalid DNS RR class (%s), not adding mDNS record to Avahi' % record.rclass)
+            continue
 
-            if record.rdclass != dns.rdataclass.IN:
-                logging.warning('Invalid DNS RR class (%s), not adding mDNS record to Avahi' % record.rdclass)
-                continue
+        #if (record.rtype == QTYPE.PTR and ':' in record_data) or record.rtype == QTYPE.AAAA:
+        #    continue #ignore IPV6 for now, can't sniff those connections
 
-            #if (record.rdtype == dns.rdatatype.PTR and ':' in record.to_digestable()) or record.rdtype == dns.rdatatype.AAAA:
-            #    continue #ignore IPV6 for now, can't sniff those connections
-
-            try:
-                group.AddRecord( #http://avahi.sourcearchive.com/documentation/0.6.30-5/avahi-client_2publish_8h_a849f3042580d6c8534cba820644517ac.html#a849f3042580d6c8534cba820644517ac
-                  IF_UNSPEC,  # iface *
-                  PROTO_UNSPEC,  # proto _INET & _INET6
-                  dbus.UInt32(256),  # AvahiPublishFlags (use multicast)
-                  str(rrset.name).decode('utf-8'), #name
-                  dbus.UInt16(record.rdclass), #class
-                  dbus.UInt16(record.rdtype), #type
-                  dbus.UInt32(rrset.ttl), #ttl
-                  string_array_to_txt_array([record.to_digestable()])[0] #rdata
-                )
-                logging.info('added mDNS record to Avahi: %s' % rrset.to_text())
-            except UnicodeDecodeError:
-                logging.warning('malformed unicode in rdata, skipping: %s' % rrset.to_text())
-            except dbus.exceptions.DBusException as e:
-                if e.get_dbus_name() == 'org.freedesktop.Avahi.InvalidDomainNameError':
-                    logging.warning('not mirroring mDNS record with special chars: %s' % rrset.to_text())
-                    continue # skip this record since Avahi will reject it
-                    # mac probably sent a device_info PTR with spaces and parentheses in the friendly description
-                    #  per https://tools.ietf.org/html/rfc6763#section-4.1.3
-                    # fanboy\032\(2\)._eppc._tcp.local. 4500 CLASS32769 TXT "" # `fanboy (2)`
-                    # mDNS.c sends UTF8, dnspythom.from_wire() assumes ASCII, DBUS wants Unicode, Avahi only takes [a-zA-Z0-9.-]
-                    #   http://dbus.freedesktop.org/doc/dbus-python/api/dbus.String-class.html
-                    #   http://dbus.freedesktop.org/doc/dbus-python/api/dbus.UTF8String-class.html
-                    #   http://www.avahi.org/ticket/21 http://avahi.org/ticket/63
-                    #   http://git.0pointer.net/avahi.git/commit/?id=5c22acadcbe5b01d910d75b71e86e06a425172d3
-                    #   http://git.0pointer.net/avahi.git/commit/?id=ee2820a23c6968bbeadbdf510389301dca6bc765
-                    #   http://git.0pointer.net/avahi.git/tree/avahi-common/domain.c
+        try:
+            # Convert dnslib RR to Avahi format
+            rname = str(record.rname)
+            rdata_str = str(record.rdata)
+            
+            group.AddRecord(
+              IF_UNSPEC,  # iface
+              PROTO_UNSPEC,  # proto _INET & _INET6
+              dbus.UInt32(256),  # AvahiPublishFlags (use multicast)
+              rname, #name
+              dbus.UInt16(record.rclass), #class
+              dbus.UInt16(record.rtype), #type
+              dbus.UInt32(record.ttl), #ttl
+              string_array_to_txt_array([rdata_str])[0] #rdata
+            )
+            logging.info('added mDNS record to Avahi: %s' % record)
+        except UnicodeDecodeError:
+            logging.warning('malformed unicode in rdata, skipping: %s' % record)
+        except dbus.exceptions.DBusException as e:
+            if e.get_dbus_name() == 'org.freedesktop.Avahi.InvalidDomainNameError':
+                logging.warning('not mirroring mDNS record with special chars: %s' % record)
+                continue # skip this record since Avahi will reject it
+                # mac probably sent a device_info PTR with spaces and parentheses in the friendly description
+                #  per https://tools.ietf.org/html/rfc6763#section-4.1.3
+                # fanboy\032\(2\)._eppc._tcp.local. 4500 CLASS32769 TXT "" # `fanboy (2)`
+                # mDNS.c sends UTF8, dnslib handles this better than dnspython
+                # Avahi only takes [a-zA-Z0-9.-] in domain names
+            else:
                 raise
 
 
