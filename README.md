@@ -27,15 +27,19 @@ Just run it and clients will see its mDNS advertisement and register to it withi
 `sudo pmset networkoversleep 1` may be necessary to ensure OSX clients will publish services at-all-costs.  
 You must ensure both SPS server and client use the same network-segment and IP subnet and that IP Multicast traffic between them is not blocked.  
 
-gevent 1.0 is required for its co-operative threading feature; its packaged in Debian jessie.  
-Because of this, SPS can't be run under python3 (FIXME: replace gevent with asyncio)  
+**Python 3.8+** is now required. The previous gevent dependency has been replaced with native asyncio for better performance and maintainability.  
 
-* Debian 8.0+ (jessie) & Ubuntu 14.04+ (Trusty Tahr)
-```
-apt-get install python-scapy python-netifaces python-dbus python-gevent python-pip python-setuptools avahi-daemon git
-pip install git+https://github.com/kfix/SleepProxyServer.git
+* Modern Linux distributions with Python 3.8+
+```bash
+# Install system dependencies
+sudo apt-get install python3-scapy python3-netifaces python3-dbus python3-pip python3-setuptools avahi-daemon git
+
+# Install SleepProxyServer
+pip3 install git+https://github.com/kfix/SleepProxyServer.git
+
+# Run the service
 nohup sleepproxyd >/dev/null 2>&1 &
-#^put that in rc.local or an initscript or systemd-unit
+# ^put that in rc.local or an initscript or systemd-unit
 ```
 
 * [OpenWRT](https://github.com/enigmagroup/enigmabox-openwrt/blob/master/python-gevent/Makefile)

@@ -1,6 +1,7 @@
-"""A NSUPDATE server class for gevent, emulating apple's mDNSResponder SPS server"""
+"""A NSUPDATE server class for asyncio, emulating apple's mDNSResponder SPS server"""
 # Copyright (c) 2013 Russell Cloran
 # Copyright (c) 2014 Joey Korkames
+# Copyright (c) 2025 Dennis Schafroth
 
 import traceback
 import struct
@@ -14,8 +15,8 @@ import dns.edns
 
 import ipaddress
 import netifaces
-
 import binascii
+import asyncio
 
 
 # https://github.com/aosm/mDNSResponder/commits/master
@@ -69,16 +70,16 @@ http://tools.ietf.org/html/draft-cheshire-edns0-owner-option-00"""
     def _mac2text(mac):
         if not mac: return mac
         #if len(mac) == 6: mac.encode('hex') #this was a wire-format binary
-        mac = binascii.hexlify(mac)
-        return mac.lower().translate(None,'.:-') #del common octet delimiters
+        mac = binascii.hexlify(mac).decode('ascii')
+        return mac.lower().translate({ord(c): None for c in '.:-'}) #del common octet delimiters
 
     def to_wire(self, file):
-        data = '' + ver + seq
+        data = bytes([self.ver, self.seq])
         #data += self.pmac.decode('hex')
         data += binascii.unhexlify(self.pmac)
         if self.pmac != self.wmac:
-           data += self.wmac.decode('hex')
-           if passwd: data += passwd
+           data += binascii.unhexlify(self.wmac)
+           if self.passwd: data += self.passwd
 
         file.write(data)
 
@@ -86,15 +87,17 @@ http://tools.ietf.org/html/draft-cheshire-edns0-owner-option-00"""
     def from_wire(cls, otype, wire, current, olen):
         data = wire[current:current + olen]
         if olen == 20:
-           opt = (ver, seq, pmac, wmac, passwd) = struct.unpack('!BB6s6s6s',data)
+           (ver, seq, pmac, wmac, passwd) = struct.unpack('!BB6s6s6s',data)
+           return cls(ver, seq, pmac, wmac, passwd)
         elif olen == 18:
-           opt = (ver, seq, pmac, wmac, passwd) = struct.unpack('!BB6s6s4s',data)
+           (ver, seq, pmac, wmac, passwd) = struct.unpack('!BB6s6s4s',data)
+           return cls(ver, seq, pmac, wmac, passwd)
         elif olen == 14:
-           opt = (ver, seq, pmac, wmac) = struct.unpack("!BB6s6s",data)
+           (ver, seq, pmac, wmac) = struct.unpack("!BB6s6s",data)
+           return cls(ver, seq, pmac, wmac)
         elif olen == 8:
-           opt = (ver, seq, pmac) = struct.unpack("!BB6s",data)
-
-        return cls(*opt)
+           (ver, seq, pmac) = struct.unpack("!BB6s",data)
+           return cls(ver, seq, pmac)
 
     def __repr__(self):
         return "%s[OPT#%s](%s, %s, %s, %s, %s)" % (
@@ -111,12 +114,26 @@ dns.edns._type_to_class.update({dns.edns.OWNER: OwnerOption})
 
 from sleepproxy.manager import manage_host
 
-from gevent.server import DatagramServer
-#https://github.com/surfly/gevent/blob/master/gevent/server.py#L106
-
 __all__ = ['SleepProxyServer']
 
-class SleepProxyServer(DatagramServer):
+class SleepProxyServer(asyncio.DatagramProtocol):
+    def __init__(self, address):
+        self.address = address
+        self.transport = None
+        
+    def connection_made(self, transport):
+        self.transport = transport
+        
+    async def serve_forever(self):
+        loop = asyncio.get_running_loop()
+        transport, protocol = await loop.create_datagram_endpoint(
+            lambda: self,
+            local_addr=self.address
+        )
+        try:
+            await asyncio.Future()  # Run forever
+        finally:
+            transport.close()
 
     # #@classmethod
     # #def get_listener(self, address, family=None):
@@ -127,29 +144,29 @@ class SleepProxyServer(DatagramServer):
     # #    sock.bind(address)
     # #    return sock
 
-    def handle(self, message, raddress):
+    def datagram_received(self, data, addr):
         try:
             #with ignored(dns.message.BadEDNS):
-            message = dns.message.from_wire(message, ignore_trailing=True)
+            message = dns.message.from_wire(data, ignore_trailing=True)
         except dns.message.BadEDNS: 
             #yosemite's discoveryd sends an OPT record per active NIC, dnspython doesn't like more than 1 OPT record
             #  https://github.com/rthalley/dnspython/blob/master/dns/message.py#L642 
             #  so turn off Wi-Fi for ethernet-connected clients
             pass #or send back an nxdomain or servfail
         except: #no way to just catch dns.exceptions.*
-            logging.warning("Error decoding DNS message from %s" % raddress[0])
+            logging.warning("Error decoding DNS message from %s" % addr[0])
             logging.debug(traceback.format_exc())
             return
     
         if message.edns < 0:
-            logging.warning("Received non-EDNS message from %s, ignoring" % raddress[0])
+            logging.warning("Received non-EDNS message from %s, ignoring" % addr[0])
             return
     
         if not (message.opcode() == 5 and message.authority):
-            logging.warning("Received non-UPDATE message from %s, ignoring" % raddress[0])
+            logging.warning("Received non-UPDATE message from %s, ignoring" % addr[0])
             return
     
-        logging.debug("Received SPS registration from %s, parsing" % raddress[0])
+        logging.debug("Received SPS registration from %s, parsing" % addr[0])
 
         info = {'records': [], 'addresses': []}
     
@@ -164,7 +181,7 @@ class SleepProxyServer(DatagramServer):
                     if af == netifaces.AF_INET6: mask = (mask.count('f') * 4) # convert linux masks to prefix length...gooney
                     if address['addr'].find('%') > -1: continue #more linux ipv6 stupidity
                     iface_net = ipaddress.ip_interface('%s/%s' % (address['addr'], mask)).network
-                    if ipaddress.ip_address(raddress[0]) in iface_net:
+                    if ipaddress.ip_address(addr[0]) in iface_net:
                         info['mymac'] = ifaddresses[netifaces.AF_LINK][0]['addr']
                         info['myif'] = iface
     
@@ -184,7 +201,7 @@ class SleepProxyServer(DatagramServer):
                 #if option.passwd: # password required in wakeup packet
                 #  mDNS.c:SendSPSRegistrationForOwner() doesn't seem to add a password
     
-        self._answer(raddress, message)
+        self._answer(addr, message)
 
         if len(message.options) == 2:
            # need both an owner and an update-lease option, else its just a post-wake notification (incremented seq number)
@@ -206,4 +223,4 @@ class SleepProxyServer(DatagramServer):
         response.use_edns(edns=True, ednsflags=dns.rcode.NOERROR, payload=query.payload, options=[query.options[0]]) #payload should be 1440, theoretical udp-over-eth maxsz stdframe
         logging.warning("Confirming SPS registration @%s with %s[%s] for %s secs" % (query.options[1].seq, address[0], query.options[1].pmac, query.options[0].lease))
         logging.debug('RESPONSE--\n\n%s\n\n%s\n\n--RESPONSE END' % (response,response.options))
-        self.socket.sendto(response.to_wire(), address)
+        self.transport.sendto(response.to_wire(), address)

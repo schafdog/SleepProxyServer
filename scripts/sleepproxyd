@@ -1,9 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-import gevent.monkey
-gevent.monkey.patch_all()
-
-import gevent
+import asyncio
 
 import argparse
 import logging
@@ -20,10 +17,11 @@ class MultilineSysLogHandler(logging.handlers.SysLogHandler):
            record.msg = l
            super(MultilineSysLogHandler,self).emit(record)
 
-def glisten(bindaddr):
+async def glisten(bindaddr):
     # TODO: support systemd socket activation
     logging.warning("listening for SleepProxyServer requests on UDP:[%s]:3535" % bindaddr)
-    return dnsserve.SleepProxyServer((bindaddr, 3535))
+    server = dnsserve.SleepProxyServer((bindaddr, 3535))
+    await server.serve_forever()
 
 anyaddr = ['0.0.0.0']
 if socket.has_ipv6: anyaddr.append('::')
@@ -45,8 +43,13 @@ syslog.setFormatter(logging.Formatter(logfmt))
 logging.getLogger().addHandler(syslog)
 #doesn't syslog exceptions...need systemd for that
 
-signal.signal(signal.SIGUSR1, manager.print_hosts)
-signal.signal(signal.SIGHUP, manager.advertise)
-manager.advertise()
-greenlets = [gevent.spawn(glisten(ip).serve_forever) for ip in args.bind]
-gevent.joinall(greenlets) #loops forever here
+async def main():
+    signal.signal(signal.SIGUSR1, manager.print_hosts)
+    signal.signal(signal.SIGHUP, manager.advertise)
+    manager.advertise()
+    
+    tasks = [asyncio.create_task(glisten(ip)) for ip in args.bind]
+    await asyncio.gather(*tasks)
+
+if __name__ == '__main__':
+    asyncio.run(main())
