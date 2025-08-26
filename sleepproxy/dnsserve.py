@@ -154,6 +154,31 @@ class SleepProxyServer(asyncio.DatagramProtocol):
             # TODO: Handle custom EDNS options (UpdateLeaseOption, OwnerOption)
             # This would require custom EDNS option parsing in dnslib
     
+        # TEMPORARY WORKAROUND: Extract othermac from hostname or use a default
+        # In the original code, this came from EDNS OwnerOption
+        if 'othermac' not in info:
+            # Try to extract MAC from the hostname in DNS records
+            othermac = None
+            for rr in info.get('records', []):
+                rr_name = str(rr.rname).lower()
+                # Look for patterns like "d49a20de9d39.local" (MAC in hostname)
+                if '.local' in rr_name and len(rr_name.split('.')[0]) == 12:
+                    potential_mac = rr_name.split('.')[0]
+                    if all(c in '0123456789abcdef' for c in potential_mac):
+                        othermac = potential_mac
+                        break
+            
+            if not othermac:
+                # Generate a MAC-like identifier from the source IP
+                ip_parts = addr[0].split('.')
+                if len(ip_parts) == 4:
+                    othermac = "ff%02x%02x%02x%02x00" % (int(ip_parts[0]), int(ip_parts[1]), int(ip_parts[2]), int(ip_parts[3]))
+                else:
+                    othermac = "ffffffffffff"  # Default fallback
+                    
+            info['othermac'] = othermac
+            logging.warning("Using derived othermac: %s (EDNS OwnerOption not parsed)" % othermac)
+
         self._answer(addr, message)
 
         # For now, always call manage_host - EDNS option handling to be implemented
