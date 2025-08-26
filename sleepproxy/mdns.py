@@ -15,8 +15,8 @@ dns.rdataclass.UNIQUE = 0x8000 #32768
 # http://www.opensource.apple.com/source/mDNSResponder/mDNSResponder-522.1.11/mDNSCore/mDNSEmbeddedAPI.h 
 # kDNSClass_UniqueRRSet
 # have to filter it out from some OSX SPS clients' rdatas
-# Use modern dnspython API instead of deprecated _by_value
-dns.rdataclass.RdataClass.make(0x8001, 'IN') #for nicer nsupdate text dumps 
+# Note: The old _by_value API is no longer available in modern dnspython
+# This was only for prettier nsupdate text dumps, functionality works without it 
 
 _HOSTS = {}
 
