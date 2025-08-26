@@ -42,6 +42,11 @@ logfmt = 'sleepproxyd[%(process)d/%(threadName)s@%(module)s:%(levelname)s] %(mes
 
 if args.verbose:
     logging.basicConfig(format=logfmt + ' --(%(pathname)s:%(lineno)d)--', level=logging.DEBUG)
+    # Enable debug logging for dns module
+    logging.getLogger('dns').setLevel(logging.DEBUG)
+    logging.getLogger('dns.message').setLevel(logging.DEBUG)
+    logging.getLogger('dns.rdata').setLevel(logging.DEBUG)
+    logging.getLogger('dns.edns').setLevel(logging.DEBUG)
 else:
     logging.basicConfig(format=logfmt, level=logging.WARNING)
 

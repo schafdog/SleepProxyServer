@@ -159,14 +159,51 @@ class SleepProxyServer(asyncio.DatagramProtocol):
             #  https://github.com/rthalley/dnspython/blob/master/dns/message.py#L642 
             #  so turn off Wi-Fi for ethernet-connected clients
             return #or send back an nxdomain or servfail
-        except NotImplementedError:
-            logging.warning("DNS message from %s contains unsupported EDNS options, attempting basic parsing" % addr[0])
-            try:
-                # Try parsing without EDNS options
-                message = dns.message.from_wire(data, ignore_trailing=True, one_rr_per_rrset=True)
-            except:
-                logging.warning("Failed to parse DNS message from %s even without EDNS" % addr[0])
-                logging.debug(traceback.format_exc())
+        except (NotImplementedError, dns.exception.FormError, ValueError) as e:
+            logging.warning("DNS message from %s parsing failed (%s), trying fallback methods" % (addr[0], type(e).__name__))
+            logging.debug("Error details: %s" % str(e))
+            
+            # Try multiple fallback parsing strategies
+            message = None
+            for strategy in ['ignore_edns', 'ignore_additional', 'basic_only']:
+                try:
+                    if strategy == 'ignore_edns':
+                        # Try without EDNS processing
+                        message = dns.message.from_wire(data, ignore_trailing=True, one_rr_per_rrset=True, keyring=None, ignore_errors=True)
+                    elif strategy == 'ignore_additional':
+                        # Try parsing but skip additional section entirely
+                        import dns.wire
+                        wire_data = dns.wire.Message(data)
+                        message = dns.message.Message()
+                        message.id = wire_data.id()
+                        message.flags = wire_data.flags()
+                        # Only parse question and authority sections, skip additional
+                        for section in [dns.message.MessageSection.QUESTION, dns.message.MessageSection.AUTHORITY]:
+                            try:
+                                section_count = wire_data.count(section)
+                                for _ in range(section_count):
+                                    rr = wire_data.read_rr(section)
+                                    message.find_rrset(rr.name, rr.rdclass, rr.rdtype, create=True).add(rr)
+                            except:
+                                continue
+                        break
+                    else:  # basic_only
+                        # Last resort: create minimal message structure
+                        message = dns.message.Message()
+                        message.id = int.from_bytes(data[0:2], 'big')
+                        message.flags = int.from_bytes(data[2:4], 'big')
+                        logging.warning("Using minimal DNS message parsing for %s" % addr[0])
+                        break
+                        
+                    if message:
+                        logging.info("Successfully parsed DNS message from %s using %s strategy" % (addr[0], strategy))
+                        break
+                except Exception as fallback_error:
+                    logging.debug("Fallback strategy %s failed: %s" % (strategy, fallback_error))
+                    continue
+            
+            if not message:
+                logging.error("All DNS parsing strategies failed for message from %s" % addr[0])
                 return
         except: #no way to just catch dns.exceptions.*
             logging.warning("Error decoding DNS message from %s" % addr[0])
