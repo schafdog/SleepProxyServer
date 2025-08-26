@@ -90,7 +90,10 @@ def _update_to_group(group, records):
             rname = str(record.rname)
             
             # Get binary rdata from dnslib record
-            rdata_bytes = record.rdata.pack()
+            import io
+            buffer = io.BytesIO()
+            record.rdata.pack(buffer)
+            rdata_bytes = buffer.getvalue()
             
             group.AddRecord(
               IF_UNSPEC,  # iface
