@@ -89,11 +89,10 @@ def _update_to_group(group, records):
             # Convert dnslib RR to Avahi format  
             rname = str(record.rname)
             
-            # Get binary rdata from dnslib record
-            import io
-            buffer = io.BytesIO()
-            record.rdata.pack(buffer)
-            rdata_bytes = buffer.getvalue()
+            # Use dnslib string representation like dnspython's to_digestable()
+            from dnslib import DNSLabel
+            name = DNSLabel(str(record.rdata))
+            rdata_str = name.pack()
             
             group.AddRecord(
               IF_UNSPEC,  # iface
@@ -103,7 +102,7 @@ def _update_to_group(group, records):
               dbus.UInt16(record.rclass), #class
               dbus.UInt16(record.rtype), #type
               dbus.UInt32(record.ttl), #ttl
-              [dbus.Byte(b) for b in rdata_bytes] #rdata as byte array
+              string_array_to_txt_array([rdata_str])[0] #rdata
             )
             logging.info('added mDNS record to Avahi: %s' % record)
         except UnicodeDecodeError:
