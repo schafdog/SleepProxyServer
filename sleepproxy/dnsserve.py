@@ -12,6 +12,7 @@ import dns.flags
 import dns.message
 import dns.reversename
 import dns.edns
+import dns.wire
 
 import ipaddress
 import netifaces
@@ -181,7 +182,6 @@ class SleepProxyServer(asyncio.DatagramProtocol):
                         message = dns.message.from_wire(data, ignore_trailing=True, one_rr_per_rrset=True, keyring=None, ignore_errors=True)
                     elif strategy == 'ignore_additional':
                         # Try parsing but skip additional section entirely
-                        import dns.wire
                         wire_data = dns.wire.Message(data)
                         message = dns.message.Message()
                         message.id = wire_data.id()
