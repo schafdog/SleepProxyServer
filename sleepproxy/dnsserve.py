@@ -158,7 +158,16 @@ class SleepProxyServer(asyncio.DatagramProtocol):
             #yosemite's discoveryd sends an OPT record per active NIC, dnspython doesn't like more than 1 OPT record
             #  https://github.com/rthalley/dnspython/blob/master/dns/message.py#L642 
             #  so turn off Wi-Fi for ethernet-connected clients
-            pass #or send back an nxdomain or servfail
+            return #or send back an nxdomain or servfail
+        except NotImplementedError:
+            logging.warning("DNS message from %s contains unsupported EDNS options, attempting basic parsing" % addr[0])
+            try:
+                # Try parsing without EDNS options
+                message = dns.message.from_wire(data, ignore_trailing=True, one_rr_per_rrset=True)
+            except:
+                logging.warning("Failed to parse DNS message from %s even without EDNS" % addr[0])
+                logging.debug(traceback.format_exc())
+                return
         except: #no way to just catch dns.exceptions.*
             logging.warning("Error decoding DNS message from %s" % addr[0])
             logging.debug(traceback.format_exc())
