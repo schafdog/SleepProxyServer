@@ -5,14 +5,15 @@ setup(
     description="An implementation of a sleep proxy server, "
         "which aims to be compatible with Apple's wake on demand",
     version="0.2",
-    author="Russell Cloran",
-    author_email="rcloran@gmail.com",
-    url="https://github.com/rcloran/SleepProxyServer",
+    author="Dennis Schafroth",
+    author_email="dennis@schafroth.com",
+    url="https://github.com/schafdog/SleepProxyServer",
     packages=["sleepproxy"],
     scripts=["scripts/sleepproxyd"],
     python_requires=">=3.8",
     install_requires=[
         # "dbus-python",  # Unfortunately not distributed with a setup.py
+        "dnspython",
         "dnslib",
         "netifaces",
         "scapy",
@@ -20,7 +21,7 @@ setup(
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: System Administrators",
-        "License :: OSI Approved :: MIT License",
+#        "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
