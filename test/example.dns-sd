@@ -1,0 +1,38 @@
+NSUPDATE START--
+;; ->>HEADER<<- opcode: UPDATE, status: NOERROR, id: 11736
+;; flags: ; QUERY: 1, ANSWER: 0, AUTHORITY: 26, ADDITIONAL: 1
+;; QUESTION SECTION:
+;.                              IN      SOA
+;; AUTHORITY SECTION:
+10.0.0.10.in-addr.arpa. 120     IN      PTR     john.local.
+john.local.             120     IN      A       10.0.0.10
+6.e.b.0.d.7.e.f.f.f.0.8.e.d.6.9.6.4.4.9.2.b.d.5.a.8.e.5.0.3.d.f.ip6.arpa. 120     IN      PTR     john.local.
+john.local.             120     IN      AAAA    fd30:5e8a:5db2:9446:96de:80ff:fe7d:be6
+6.e.b.0.d.7.e.f.f.f.0.8.e.d.6.9.0.0.0.0.0.0.0.0.0.0.0.0.0.8.e.f.ip6.arpa. 120     IN      PTR     john.local.
+john.local.             120     IN      AAAA    fe80::96de:80ff:fe7d:be6
+john._adisk._tcp.local. 4500    IN      TXT     "sys=adVF=0x100" "spc=1" "dk0=adVN=TM,adVF=0x82"
+_services._dns-sd._udp.local. 4500    IN      PTR     _adisk._tcp.local.
+_adisk._tcp.local.      4500    IN      PTR     john._adisk._tcp.local.
+john._adisk._tcp.local. 120     IN      SRV     0 0 0 john.local.
+john._device-info._tcp.local. 4500    IN      TXT     "spc=1" "model=MacSamba"
+_services._dns-sd._udp.local. 4500    IN      PTR     _device-info._tcp.local.
+_device-info._tcp.local. 4500    IN      PTR     john._device-info._tcp.local.
+john._device-info._tcp.local. 120     IN      SRV     0 0 0 john.local.
+john._ssh._tcp.local.   4500    IN      TXT     "spc=1"
+_services._dns-sd._udp.local. 4500    IN      PTR     _ssh._tcp.local.
+_ssh._tcp.local.        4500    IN      PTR     john._ssh._tcp.local.
+john._ssh._tcp.local.   120     IN      SRV     0 0 22 john.local.
+john._csync2._tcp.local. 4500    IN      TXT     "spc=1"
+_services._dns-sd._udp.local. 4500    IN      PTR     _csync2._tcp.local.
+_csync2._tcp.local.     4500    IN      PTR     john._csync2._tcp.local.
+john._csync2._tcp.local. 120     IN      SRV     0 0 30865 john.local.
+john._smb._tcp.local.   4500    IN      TXT     "spc=1"
+_services._dns-sd._udp.local. 4500    IN      PTR     _smb._tcp.local.
+_smb._tcp.local.        4500    IN      PTR     john._smb._tcp.local.
+john._smb._tcp.local.   120     IN      SRV     0 0 445 john.local.
+;; ADDITIONAL SECTION:
+;; OPT PSEUDOSECTION
+; EDNS: version: 0, flags: ; udp: 4096
+; EDNS: code: 2; data: 00008ca0
+; EDNS: code: 4; data: 000094de807d0be6
+--NSUPDATE END --
